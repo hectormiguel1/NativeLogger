@@ -1,0 +1,11 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <MSBuildAllProjects>$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
+        <HasSharedItems>true</HasSharedItems>
+        <SharedGUID>9a19103f-16f7-4668-be54-9a1e7a4f7556</SharedGUID>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Compile Include="$(MSBuildThisFileDirectory)**\*.cs" />
+    </ItemGroup>
+</Project>

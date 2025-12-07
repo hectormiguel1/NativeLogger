@@ -23,9 +23,20 @@ extern "C" {
     
     typedef void (*LogCallback)(const char * msg);
     
+    typedef enum
+    {
+        Debug = 0, 
+        Info = 1, 
+        Warn = 2, 
+        Error = 3
+    } LogLevel;
+    
     NATIVE_LOGGER_API void register_async_callback(LogCallback cb);
     NATIVE_LOGGER_API void register_sync_callback(LogCallback cb);
+    NATIVE_LOGGER_API void register_async_callback_with_level(LogCallback cb, LogLevel level);
+    NATIVE_LOGGER_API void register_sync_callback_with_level(LogCallback cb, LogLevel level);
     NATIVE_LOGGER_API void free_log_memory(void* ptr);
+    NATIVE_LOGGER_API void free_log_memory_batch(void** ptr, int count);
 
     
 #ifdef __cplusplus
