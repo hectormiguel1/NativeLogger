@@ -2,7 +2,7 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-namespace Native;
+namespace Native.Logging;
 
 public static class LogRouter
 {

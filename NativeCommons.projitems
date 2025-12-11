@@ -6,6 +6,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <Compile Include="$(MSBuildThisFileDirectory)**\*.cs" />
-    </ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)Common\Result.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Logging\NativeLogger.cs" />
+  </ItemGroup>
 </Project>
