@@ -23,7 +23,7 @@ extern "C" {
     
     typedef enum {
         Ok = 0, 
-        Err = 1
+        Err = 1,
         OkInline = 2
     } Type;
     
