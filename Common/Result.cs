@@ -28,9 +28,9 @@ public static unsafe class NativeResult
     // ==========================================================
 
     [StructLayout(LayoutKind.Explicit)]
-    public struct ResultUnion<T> where T : unmanaged
+    public struct ResultUnion
     {
-        [FieldOffset(0)] public T* Data; 
+        [FieldOffset(0)] public void* Data; 
         [FieldOffset(0)] public Error* Err;
     }
 
@@ -38,7 +38,7 @@ public static unsafe class NativeResult
     public struct Result<T> where T : unmanaged
     {
         public ResultType Type;
-        public ResultUnion<T> Payload;
+        public ResultUnion Payload;
     }
 
     // ==========================================================
@@ -52,13 +52,13 @@ public static unsafe class NativeResult
     /// </summary>
     public static Result<T> CreateSuccess<T>(T value) where T : unmanaged
     {
-        T* ptr = (T*)NativeMemory.Alloc((nuint)sizeof(T));
+        var ptr = (T*) NativeMemory.Alloc((nuint)sizeof(T));
         *ptr = value;
 
         return new Result<T>
         {
             Type = ResultType.Ok,
-            Payload = new ResultUnion<T> { Data = ptr }
+            Payload = new ResultUnion { Data = ptr }
         };
     }
 
@@ -77,7 +77,7 @@ public static unsafe class NativeResult
             throw new ArgumentException($"Type {typeof(T)} is too large ({sizeof(T)} bytes) to inline in a pointer.");
         }
 
-        ResultUnion<T> union = new ResultUnion<T>();
+        var union = new ResultUnion();
         
         // MAGIC: Write the value directly into the memory slot of the 'Data' pointer.
         // We cast the address of the Data field (&union.Data) to a T pointer.
@@ -98,7 +98,7 @@ public static unsafe class NativeResult
         return new Result<int>
         {
             Type = ResultType.Ok,
-            Payload = new ResultUnion<int> { Data = null }
+            Payload = new ResultUnion { Data = null }
         };
     }
 
@@ -107,8 +107,8 @@ public static unsafe class NativeResult
     /// </summary>
     public static Result<T> CreateError<T>(string message, int code) where T : unmanaged
     {
-        int byteCount = Encoding.UTF8.GetByteCount(message);
-        byte* msgPtr = (byte*)NativeMemory.Alloc((nuint)(byteCount + 1));
+        var byteCount = Encoding.UTF8.GetByteCount(message);
+        var msgPtr = (byte*)NativeMemory.Alloc((nuint)(byteCount + 1));
         
         fixed (char* strPtr = message)
         {
@@ -116,14 +116,14 @@ public static unsafe class NativeResult
         }
         msgPtr[byteCount] = 0; 
 
-        Error* errPtr = (Error*)NativeMemory.Alloc((nuint)sizeof(Error));
+        var errPtr = (Error*)NativeMemory.Alloc((nuint)sizeof(Error));
         errPtr->ErrorMessage = msgPtr;
         errPtr->ErrorCode = code;
 
         return new Result<T>
         {
             Type = ResultType.Error,
-            Payload = new ResultUnion<T> { Err = errPtr }
+            Payload = new ResultUnion { Err = errPtr }
         };
     }
     
@@ -134,24 +134,22 @@ public static unsafe class NativeResult
     /// <summary>
     /// Frees the result memory. 
     /// Exposed to C/Dart as "free_result".
-    /// We use Result<int> as a placeholder because the binary layout 
+    /// We use Result as a placeholder because the binary layout 
     /// is identical for all generic Results.
     /// </summary>
     [UnmanagedCallersOnly(EntryPoint = "free_result")]
     public static void FreeResult(Result<int> result)
     {
-        // CASE 1: Inline Value -> DO NOTHING
-        // The data is a value (like 123), not a pointer.
-        if (result.Type == ResultType.OkInline)
+        switch (result.Type)
         {
-            return;
-        }
-
-        // CASE 2: Error -> Free the Error Struct AND the Message
-        if (result.Type == ResultType.Error)
-        {
-            if (result.Payload.Err != null)
+            // CASE 1: Inline Value -> DO NOTHING
+            // The data is a value (like 123), not a pointer.
+            case ResultType.OkInline:
+                return;
+            // CASE 2: Error -> Free the Error Struct AND the Message
+            case ResultType.Error:
             {
+                if (result.Payload.Err == null) return;
                 // Free the inner message string first
                 if (result.Payload.Err->ErrorMessage != null)
                 {
@@ -159,18 +157,21 @@ public static unsafe class NativeResult
                 }
                 // Free the Error struct itself
                 NativeMemory.Free(result.Payload.Err);
+                return;
             }
-            return;
-        }
-
-        // CASE 3: Standard Success -> Free the Data Pointer
-        // Checks for NULL (Void results) automatically before freeing
-        if (result.Type == ResultType.Ok)
-        {
-            if (result.Payload.Data != null)
+            // CASE 3: Standard Success -> Free the Data Pointer
+            // Checks for NULL (Void results) automatically before freeing
+            case ResultType.Ok:
             {
-                NativeMemory.Free(result.Payload.Data);
+                if (result.Payload.Data != null)
+                {
+                    NativeMemory.Free(result.Payload.Data);
+                }
+
+                break;
             }
+            default:
+                throw new ArgumentOutOfRangeException();
         }
     }
     
@@ -180,7 +181,6 @@ public static unsafe class NativeResult
     // ==========================================================
     public static string StringFromPtr(byte* ptr)
     {
-        if (ptr == null) return string.Empty;
-        return new string((sbyte*)ptr);
+        return ptr == null ? string.Empty : new string((sbyte*)ptr);
     }
 }
