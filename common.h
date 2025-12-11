@@ -29,7 +29,7 @@ extern "C" {
     
     typedef struct {
         char* error_message;
-        int32_t error_code;
+        int error_code;
     } Error;
 
     typedef union {
@@ -38,7 +38,7 @@ extern "C" {
     } ResultUnion;
 
     typedef struct {
-        ResultType type;
+        Type type;
         ResultUnion payload;
     } Result;
     
@@ -54,9 +54,9 @@ extern "C" {
     {
         Finest = 0,
         Fine = 1, 
-        Info = 1, 
-        Warn = 2, 
-        Fatal = 3
+        Info = 2, 
+        Warn = 3, 
+        Fatal = 4
     } LogLevel;
     
     NATIVE_COMMON void register_async_callback(LogCallback cb);
