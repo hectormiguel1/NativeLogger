@@ -7,6 +7,7 @@
 
     <ItemGroup>
     <Compile Include="$(MSBuildThisFileDirectory)Common\Result.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Logging\NativeLogger.cs" />
-  </ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)Logging\Logger.cs" />
+        <Compile Include="$(MSBuildThisFileDirectory)Logging\LogRouter.cs" />
+    </ItemGroup>
 </Project>

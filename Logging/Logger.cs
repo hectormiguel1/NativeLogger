@@ -1,15 +1,14 @@
-using System;
-using System.IO;
 using System.Runtime.CompilerServices;
 
 namespace Native.Logging;
 
 public enum LogLevel
 {
-    Debug = 0,
-    Info = 1,
-    Warning = 2,
-    Error = 3
+    Finest = 0,
+    Fine = 1,
+    Info = 2,
+    Warning = 3,
+    Fatal = 4
 }
 
 public class NativeLogger<T>
@@ -41,11 +40,12 @@ public class NativeLogger<T>
         // 3. Format the Type Tag (Normalized to same length for alignment)
         var typeTag = level switch
         {
-            LogLevel.Info => "[INFO]",
-            LogLevel.Warning => "[WARN]",
-            LogLevel.Error => "[ERR ]",
-            LogLevel.Debug => "[DEBG]",
-            _ => "[INFO]"
+            LogLevel.Finest => "[FINEST]",
+            LogLevel.Fine =>   "[FINE  ]",
+            LogLevel.Info =>   "[INFO  ]",
+            LogLevel.Warning =>"[WANING]",
+            LogLevel.Fatal =>  "[FATAL ]",
+            _ => "[WANING]"
         };
 
         // 4. Build the string
@@ -56,15 +56,17 @@ public class NativeLogger<T>
     }
 
     // Shorthand helpers remain the same
+    public void Finest(string msg, [CallerFilePath] string f = "", [CallerLineNumber] int lineNumber = 0)
+        => Log(msg, LogLevel.Finest, f, lineNumber);
+
+    public void Fine(string msg, [CallerFilePath] string f = "", [CallerLineNumber] int lineNumber = 0)
+        => Log(msg, LogLevel.Fine, f, lineNumber);
+
     public void Info(string msg, [CallerFilePath] string f = "", [CallerLineNumber] int lineNumber = 0)
         => Log(msg, LogLevel.Info, f, lineNumber);
 
-    public void Error(string msg, [CallerFilePath] string f = "", [CallerLineNumber] int lineNumber = 0)
-        => Log(msg, LogLevel.Error, f, lineNumber);
-
-    public void Warn(string msg, [CallerFilePath] string f = "", [CallerLineNumber] int lineNumber = 0)
+    public void Warning(string msg, [CallerFilePath] string f = "", [CallerLineNumber] int lineNumber = 0)
         => Log(msg, LogLevel.Warning, f, lineNumber);
-
-    public void Debug(string msg, [CallerFilePath] string f = "", [CallerLineNumber] int lineNumber = 0)
-        => Log(msg, LogLevel.Debug, f, lineNumber);
+    public void Fatal(string msg, [CallerFilePath] string f = "", [CallerLineNumber] int lineNumber = 0)
+        => Log(msg, LogLevel.Fatal, f, lineNumber);
 }

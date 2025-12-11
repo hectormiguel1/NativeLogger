@@ -5,35 +5,35 @@ namespace Native.Common;
 
 public static unsafe class NativeResult
 {
-    // --- 1. Common Structures ---
+    // ==========================================================
+    // 1. Common Structures
+    // ==========================================================
 
     [StructLayout(LayoutKind.Sequential)]
     public struct Error
     {
-        public byte* ErrorMessage; // Allocated on native heap
+        public byte* ErrorMessage;
         public int ErrorCode;
     }
 
     public enum ResultType : int
     {
-        Ok = 0,
-        Error = 1,
+        Ok = 0,         // Success with Heap Pointer (Must Free)
+        Error = 1,      // Error with Heap Pointer (Must Free)
+        OkInline = 2    // Success with Inline Value (DO NOT FREE)
     }
 
-    // --- 2. Generic Definitions ---
+    // ==========================================================
+    // 2. Generic Definitions
+    // ==========================================================
 
-    // The Union: Overlaps a pointer to T with a pointer to Error
     [StructLayout(LayoutKind.Explicit)]
     public struct ResultUnion<T> where T : unmanaged
     {
-        [FieldOffset(0)] 
-        public T* Data; // Generic Pointer (C sees this as void*)
-
-        [FieldOffset(0)] 
-        public Error* Err;
+        [FieldOffset(0)] public T* Data; 
+        [FieldOffset(0)] public Error* Err;
     }
 
-    // The Result: Contains the Type and the Generic Union
     [StructLayout(LayoutKind.Sequential)]
     public struct Result<T> where T : unmanaged
     {
@@ -41,20 +41,20 @@ public static unsafe class NativeResult
         public ResultUnion<T> Payload;
     }
 
-    // --- 3. Generic Helper Methods ---
+    // ==========================================================
+    // 3. Result Creation Helpers
+    // ==========================================================
 
     /// <summary>
-    /// Creates a Success Result. Allocates memory for 'value' on the native heap.
+    /// Creates a Heap-Allocated Success Result.
+    /// Use this for large structs (FileEntryList, Config, etc.).
+    /// Caller MUST free using 'free_result'.
     /// </summary>
     public static Result<T> CreateSuccess<T>(T value) where T : unmanaged
     {
-        // 1. Allocate memory for T on the native heap
-        var ptr = (T*)NativeMemory.Alloc((nuint)sizeof(T));
-        
-        // 2. Copy the struct value into that memory
+        T* ptr = (T*)NativeMemory.Alloc((nuint)sizeof(T));
         *ptr = value;
 
-        // 3. Return the generic result
         return new Result<T>
         {
             Type = ResultType.Ok,
@@ -63,33 +63,124 @@ public static unsafe class NativeResult
     }
 
     /// <summary>
-    /// Creates an Error Result. Allocates memory for the Error and the Message.
+    /// Creates an INLINE Success Result.
+    /// Stores the value directly inside the pointer address.
+    /// NO allocation, NO free needed. 
+    /// Only works if sizeof(T) <= 8 bytes (int, bool, enums).
+    /// </summary>
+    public static Result<T> CreateInlineSuccess<T>(T value) where T : unmanaged
+    {
+        if (sizeof(T) > sizeof(void*))
+        {
+            // Fallback to heap allocation if T is too big, or throw.
+            // Throwing is better to catch dev errors.
+            throw new ArgumentException($"Type {typeof(T)} is too large ({sizeof(T)} bytes) to inline in a pointer.");
+        }
+
+        ResultUnion<T> union = new ResultUnion<T>();
+        
+        // MAGIC: Write the value directly into the memory slot of the 'Data' pointer.
+        // We cast the address of the Data field (&union.Data) to a T pointer.
+        *(T*)&union.Data = value;
+
+        return new Result<T>
+        {
+            Type = ResultType.OkInline, // Signals "Do Not Free"
+            Payload = union
+        };
+    }
+
+    /// <summary>
+    /// Creates a "Void" Success Result (Data = NULL).
+    /// </summary>
+    public static Result<int> CreateSuccess() 
+    {
+        return new Result<int>
+        {
+            Type = ResultType.Ok,
+            Payload = new ResultUnion<int> { Data = null }
+        };
+    }
+
+    /// <summary>
+    /// Creates an Error Result.
     /// </summary>
     public static Result<T> CreateError<T>(string message, int code) where T : unmanaged
     {
-        // 1. Convert string to UTF-8 bytes
-        var byteCount = Encoding.UTF8.GetByteCount(message);
+        int byteCount = Encoding.UTF8.GetByteCount(message);
+        byte* msgPtr = (byte*)NativeMemory.Alloc((nuint)(byteCount + 1));
         
-        // 2. Allocate memory for the string (Bytes + 1 for null terminator)
-        var msgPtr = (byte*)NativeMemory.Alloc((nuint)(byteCount + 1));
-        
-        // 3. Copy bytes and add null terminator
         fixed (char* strPtr = message)
         {
             Encoding.UTF8.GetBytes(strPtr, message.Length, msgPtr, byteCount);
         }
-        msgPtr[byteCount] = 0; // Null terminate
+        msgPtr[byteCount] = 0; 
 
-        // 4. Allocate memory for the Error struct
-        var errPtr = (Error*)NativeMemory.Alloc((nuint)sizeof(Error));
+        Error* errPtr = (Error*)NativeMemory.Alloc((nuint)sizeof(Error));
         errPtr->ErrorMessage = msgPtr;
         errPtr->ErrorCode = code;
 
-        // 5. Return the result (Data pointer is unused/overlapped)
         return new Result<T>
         {
             Type = ResultType.Error,
             Payload = new ResultUnion<T> { Err = errPtr }
         };
+    }
+    
+    // ==========================================================
+    // 5. Exports (The "Destructor")
+    // ==========================================================
+
+    /// <summary>
+    /// Frees the result memory. 
+    /// Exposed to C/Dart as "free_result".
+    /// We use Result<int> as a placeholder because the binary layout 
+    /// is identical for all generic Results.
+    /// </summary>
+    [UnmanagedCallersOnly(EntryPoint = "free_result")]
+    public static void FreeResult(Result<int> result)
+    {
+        // CASE 1: Inline Value -> DO NOTHING
+        // The data is a value (like 123), not a pointer.
+        if (result.Type == ResultType.OkInline)
+        {
+            return;
+        }
+
+        // CASE 2: Error -> Free the Error Struct AND the Message
+        if (result.Type == ResultType.Error)
+        {
+            if (result.Payload.Err != null)
+            {
+                // Free the inner message string first
+                if (result.Payload.Err->ErrorMessage != null)
+                {
+                    NativeMemory.Free(result.Payload.Err->ErrorMessage);
+                }
+                // Free the Error struct itself
+                NativeMemory.Free(result.Payload.Err);
+            }
+            return;
+        }
+
+        // CASE 3: Standard Success -> Free the Data Pointer
+        // Checks for NULL (Void results) automatically before freeing
+        if (result.Type == ResultType.Ok)
+        {
+            if (result.Payload.Data != null)
+            {
+                NativeMemory.Free(result.Payload.Data);
+            }
+        }
+    }
+    
+    
+    // ==========================================================
+    // 4. Utilities
+    // ==========================================================
+    public static string StringFromPtr(byte* ptr)
+    {
+        if (ptr == null) return string.Empty;
+        return new string((sbyte*)ptr);
     }
 }

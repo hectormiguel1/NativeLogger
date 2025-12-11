@@ -1,5 +1,5 @@
-#ifndef NATIVE_LOGGER_SHARED_H
-#define NATIVE_LOGGER_SHARED_H
+#ifndef NATIVE_COMMON_SHARED_H
+#define NATIVE_COMMON_SHARED_H
 
 /* =======================================================================
  * Platform & Visibility Macros
@@ -23,15 +23,15 @@ extern "C" {
     
     typedef enum {
         Ok = 0, 
-        Error = 1
-    } ResultType;
+        Err = 1
+        OkInline = 2
+    } Type;
     
     typedef struct {
         char* error_message;
-        int error_code;
+        int32_t error_code;
     } Error;
 
-    // Explicit layout union
     typedef union {
         void* data;
         Error* err;
@@ -42,7 +42,9 @@ extern "C" {
         ResultUnion payload;
     } Result;
     
-    // Function to free the result memory
+    /* * Declaration Only. 
+     * The implementation is inside the compiled C# DLL. 
+     */
     NATIVE_COMMON void free_result(Result result);
     
     
@@ -50,10 +52,11 @@ extern "C" {
     
     typedef enum
     {
-        Debug = 0, 
+        Finest = 0,
+        Fine = 1, 
         Info = 1, 
         Warn = 2, 
-        Error = 3
+        Fatal = 3
     } LogLevel;
     
     NATIVE_COMMON void register_async_callback(LogCallback cb);

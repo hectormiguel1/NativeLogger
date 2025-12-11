@@ -8,7 +8,7 @@ public static class LogRouter
 {
     
     public static Action<string>? GlobalCallback { get; private set; } = Console.WriteLine;
-    public static LogLevel Level { get; set; } = LogLevel.Info;
+    public static LogLevel Level { get; set; } = LogLevel.Fine;
     
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void AsyncLoggerCallback(IntPtr msgPtr);
