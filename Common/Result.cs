@@ -1,109 +1,95 @@
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-
+using System.Text;
 
 namespace Native.Common;
 
-[StructLayout(LayoutKind.Sequential)]
-public unsafe struct Error
+public static unsafe class NativeResult
 {
-    public byte* ErrorMessage;
-    public int ErrorCode;
-}
+    // --- 1. Common Structures ---
 
-public enum ResultType : int
-{
-    Ok = 0, 
-    Error = 1,
-}
-
-
-[StructLayout(LayoutKind.Explicit)]
-public unsafe struct ResultUnion
-{
-    [FieldOffset(0)] public FileEntryList* Data;
-    [FieldOffset(0)] public Error* Err;
-}
-
-[StructLayout(LayoutKind.Sequential)]
-public struct Result
-{
-    public ResultType Type;
-    public ResultUnion Payload;
-}
-
-public static class ResultHelpers
-{
-    public static unsafe Result CreateError(string message, int code)
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Error
     {
-        var errPtr = (Error*)Marshal.AllocCoTaskMem(sizeof(Error));
-        errPtr->ErrorCode = code;
-        errPtr->ErrorMessage = (byte*)Marshal.StringToCoTaskMemUTF8(message);
+        public byte* ErrorMessage; // Allocated on native heap
+        public int ErrorCode;
+    }
 
-        return new Result
+    public enum ResultType : int
+    {
+        Ok = 0,
+        Error = 1,
+    }
+
+    // --- 2. Generic Definitions ---
+
+    // The Union: Overlaps a pointer to T with a pointer to Error
+    [StructLayout(LayoutKind.Explicit)]
+    public struct ResultUnion<T> where T : unmanaged
+    {
+        [FieldOffset(0)] 
+        public T* Data; // Generic Pointer (C sees this as void*)
+
+        [FieldOffset(0)] 
+        public Error* Err;
+    }
+
+    // The Result: Contains the Type and the Generic Union
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Result<T> where T : unmanaged
+    {
+        public ResultType Type;
+        public ResultUnion<T> Payload;
+    }
+
+    // --- 3. Generic Helper Methods ---
+
+    /// <summary>
+    /// Creates a Success Result. Allocates memory for 'value' on the native heap.
+    /// </summary>
+    public static Result<T> CreateSuccess<T>(T value) where T : unmanaged
+    {
+        // 1. Allocate memory for T on the native heap
+        var ptr = (T*)NativeMemory.Alloc((nuint)sizeof(T));
+        
+        // 2. Copy the struct value into that memory
+        *ptr = value;
+
+        // 3. Return the generic result
+        return new Result<T>
+        {
+            Type = ResultType.Ok,
+            Payload = new ResultUnion<T> { Data = ptr }
+        };
+    }
+
+    /// <summary>
+    /// Creates an Error Result. Allocates memory for the Error and the Message.
+    /// </summary>
+    public static Result<T> CreateError<T>(string message, int code) where T : unmanaged
+    {
+        // 1. Convert string to UTF-8 bytes
+        var byteCount = Encoding.UTF8.GetByteCount(message);
+        
+        // 2. Allocate memory for the string (Bytes + 1 for null terminator)
+        var msgPtr = (byte*)NativeMemory.Alloc((nuint)(byteCount + 1));
+        
+        // 3. Copy bytes and add null terminator
+        fixed (char* strPtr = message)
+        {
+            Encoding.UTF8.GetBytes(strPtr, message.Length, msgPtr, byteCount);
+        }
+        msgPtr[byteCount] = 0; // Null terminate
+
+        // 4. Allocate memory for the Error struct
+        var errPtr = (Error*)NativeMemory.Alloc((nuint)sizeof(Error));
+        errPtr->ErrorMessage = msgPtr;
+        errPtr->ErrorCode = code;
+
+        // 5. Return the result (Data pointer is unused/overlapped)
+        return new Result<T>
         {
             Type = ResultType.Error,
-            Payload = new ResultUnion { Err = errPtr }
+            Payload = new ResultUnion<T> { Err = errPtr }
         };
-    }
-
-    public static unsafe Result CreateSuccess()
-    {
-        return new Result
-        {
-            Type = ResultType.Ok,
-            Payload = new ResultUnion { Data = null }
-        };
-    }
-
-    public static unsafe Result CreateSuccess(FileEntryList list)
-    {
-        var listPtr = (FileEntryList*)Marshal.AllocCoTaskMem(sizeof(FileEntryList));
-        *listPtr = list;
-
-        return new Result
-        {
-            Type = ResultType.Ok,
-            Payload = new ResultUnion { Data = listPtr }
-        };
-    }
-
-    [UnmanagedCallersOnly(EntryPoint = "free_result", CallConvs = [typeof(CallConvCdecl)])]
-    public static unsafe void FreeResult(Result result)
-    {
-        if (result.Type == ResultType.Error)
-        {
-            if (result.Payload.Err == null) return;
-            if (result.Payload.Err->ErrorMessage != null)
-            {
-                Marshal.FreeCoTaskMem((IntPtr)result.Payload.Err->ErrorMessage);
-            }
-
-            Marshal.FreeCoTaskMem((IntPtr)result.Payload.Err);
-        }
-        else
-        {
-            // Success
-            if (result.Payload.Data == null) return;
-            var listPtr = result.Payload.Data;
-            if (listPtr->Items != null)
-            {
-                var sizeOfEntry = Marshal.SizeOf<FileEntry>();
-                for (var i = 0; i < listPtr->Count; i++)
-                {
-                    var currentPos = (IntPtr)(listPtr->Items + i);
-                    var entry = Marshal.PtrToStructure<FileEntry>(currentPos);
-                    if (entry.FilePath != null)
-                    {
-                        Marshal.FreeCoTaskMem((IntPtr)entry.FilePath);
-                    }
-                }
-
-                Marshal.FreeCoTaskMem((IntPtr)listPtr->Items);
-            }
-
-            // Free the FileEntryList struct itself
-            Marshal.FreeCoTaskMem((IntPtr)listPtr);
-        }
     }
 }
