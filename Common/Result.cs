@@ -62,6 +62,21 @@ public static unsafe class NativeResult
             Payload = new ResultUnion { Data = ptr }
         };
     }
+    
+    /// <summary>
+    /// Creates a Heap-Allocated Success Result.
+    /// Use this for instances when the success already has a pointer to data. 
+    /// Caller MUST free using 'free_result'.
+    /// </summary>
+    public static Result<T> CreateSuccess<T>(T* value) where T : unmanaged
+    {
+        return new Result<T>
+        {
+            Type = ResultType.Ok,
+            Payload = new ResultUnion { Data = value }
+        };
+    }
+
 
     /// <summary>
     /// Creates an INLINE Success Result.
